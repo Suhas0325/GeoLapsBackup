@@ -33,8 +33,7 @@ public class FeedBackResponsesController {
             @Valid @RequestBody List<FeedbackSubmissionDTO> feedbackDtos,
             BindingResult bindingResult,
             @RequestHeader("Authorization") String authHeader) {
-         System.out.println(feedbackDtos);
-         System.out.println("hello pook");
+
         // Validate request body
         if (bindingResult.hasErrors()) {
             List<String> errors = bindingResult.getFieldErrors().stream()
@@ -59,12 +58,13 @@ public class FeedBackResponsesController {
             String token = authHeader.substring(7);
             String studentId = jwtUtil.extractUsername(token);
 
-            // Process feedback submissions
+            // Process feedback submissions (this now includes updating enrollment status)
             List<FeedBackResponses> savedResponses = feedBackResponseService.saveResponses(feedbackDtos, studentId);
 
             return ResponseEntity.ok(Map.of(
                     "status", "success",
-                    "message", "Feedback submitted successfully"
+                    "message", "Feedback submitted successfully",
+                    "hasSubmitted", true  // Add this to inform frontend of status update
             ));
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().body(Map.of(

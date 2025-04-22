@@ -18,6 +18,7 @@ public class FeedBackResponseService {
     private final FacultyRepository facultyRepository;
     private final CourseRepository courseRepository;
     private final FeedBackQuestionRepository questionRepository;
+    private final StudentEnrollmentRepository studentEnrollmentRepository;
 
     @Autowired
     public FeedBackResponseService(
@@ -25,20 +26,32 @@ public class FeedBackResponseService {
             StudentRepository studentRepository,
             FacultyRepository facultyRepository,
             CourseRepository courseRepository,
-            FeedBackQuestionRepository questionRepository) {
+            FeedBackQuestionRepository questionRepository,
+            StudentEnrollmentRepository studentEnrollmentRepository) {
         this.feedBackResponsesRepository = feedBackResponsesRepository;
         this.studentRepository = studentRepository;
         this.facultyRepository = facultyRepository;
         this.courseRepository = courseRepository;
         this.questionRepository = questionRepository;
+        this.studentEnrollmentRepository = studentEnrollmentRepository;
     }
 
     @Transactional
     public List<FeedBackResponses> saveResponses(List<FeedbackSubmissionDTO> feedbackDtos, String studentId) {
+        if (feedbackDtos == null || feedbackDtos.isEmpty()) {
+            throw new IllegalArgumentException("No feedback data provided");
+        }
+
+        // Get the first feedback item to identify course
+        FeedbackSubmissionDTO firstFeedback = feedbackDtos.get(0);
+        Integer courseId = firstFeedback.getCourseId();
+
+        // Verify student exists
         Student student = studentRepository.findById(studentId)
                 .orElseThrow(() -> new IllegalArgumentException("Student not found"));
 
-        return feedbackDtos.stream()
+        // Save all feedback responses
+        List<FeedBackResponses> responses = feedbackDtos.stream()
                 .map(dto -> {
                     FeedBackQuestion question = questionRepository.findById(dto.getQuestionId())
                             .orElseThrow(() -> new IllegalArgumentException("Question not found"));
@@ -48,12 +61,12 @@ public class FeedBackResponseService {
                         if (dto.getResponseValue() == null) {
                             throw new IllegalArgumentException("Rating value required for question ID: " + question.getQuestionId());
                         }
-                        dto.setResponseText(null); // Ensure text is null for ratings
+                        dto.setResponseText(null);
                     } else {
                         if (dto.getResponseText() == null || dto.getResponseText().trim().isEmpty()) {
                             throw new IllegalArgumentException("Text response required for question ID: " + question.getQuestionId());
                         }
-                        dto.setResponseValue(null); // Ensure rating is null for text
+                        dto.setResponseValue(null);
                     }
 
                     FeedBackResponses response = new FeedBackResponses();
@@ -65,8 +78,23 @@ public class FeedBackResponseService {
                     response.setResponseText(dto.getResponseText());
                     response.setTimeTaken(dto.getTimeTaken());
 
-                    return feedBackResponsesRepository.save(response);
+                    return response;
                 })
                 .collect(Collectors.toList());
+
+        List<FeedBackResponses> savedResponses = feedBackResponsesRepository.saveAll(responses);
+
+        // Update the enrollment status (now only needs studentId and courseId)
+        updateEnrollmentStatus(studentId, courseId);
+
+        return savedResponses;
+    }
+
+    private void updateEnrollmentStatus(String studentId, Integer courseId) {
+        studentEnrollmentRepository.findByStudent_StuIdAndCourse_CourseId(studentId, courseId)
+                .ifPresent(enrollment -> {
+                    enrollment.setHasSubmitted(true);
+                    studentEnrollmentRepository.save(enrollment);
+                });
     }
 }
